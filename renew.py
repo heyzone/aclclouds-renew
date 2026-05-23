@@ -77,9 +77,14 @@ def run(playwright):
         context.add_cookies(cookies)
 
         # ── 访问项目页 ──
+        # 用 domcontentloaded 而非 networkidle，避免广告/统计脚本持续请求导致超时
         print("正在访问项目面板...")
-        page.goto("https://dash.aclclouds.com/projects", wait_until="networkidle", timeout=60000)
-        page.wait_for_timeout(5000)
+        page.goto("https://dash.aclclouds.com/projects", wait_until="domcontentloaded", timeout=60000)
+        # 等待项目列表容器出现，最多 15 秒，比固定 sleep 更可靠
+        try:
+            page.wait_for_selector("text='My Projects'", timeout=15000)
+        except:
+            pass  # 没等到也继续，后面会检查 URL 和按钮
 
         # ── 检查是否登录成功 ──
         if "login" in page.url or "signin" in page.url:
