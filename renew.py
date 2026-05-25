@@ -1,4 +1,6 @@
 import os
+import time
+import subprocess
 import requests
 from playwright.sync_api import sync_playwright
 
@@ -7,7 +9,6 @@ TG_BOT_TOKEN = os.environ.get('TG_BOT_TOKEN', '')
 TG_CHAT_ID   = os.environ.get('TG_CHAT_ID', '')
 
 def tg_send(text: str, photo_path: str = None):
-    """发送 TG 文字消息，可附带截图。"""
     if not TG_BOT_TOKEN or not TG_CHAT_ID:
         print("⚠️  未配置 TG_BOT_TOKEN / TG_CHAT_ID，跳过通知。")
         return
@@ -34,13 +35,52 @@ def tg_send(text: str, photo_path: str = None):
     except Exception as e:
         print(f"⚠️  TG 通知异常: {e}")
 
+# ── gost 代理启动 ──────────────────────────────────────────────
+# SOCKS5_PROXY 格式：user:pass@host:port 或 host:port
+LOCAL_HTTP_PORT = 18080
+
+def start_gost(socks5_proxy: str) -> subprocess.Popen:
+    """
+    将认证 SOCKS5 转为本地 HTTP 代理，供 Chromium 使用。
+    gost 命令：gost -L http://:18080 -F socks5://user:pass@host:port
+    """
+    cmd = ["gost", "-L", f"http://:{LOCAL_HTTP_PORT}", "-F", f"socks5://{socks5_proxy}"]
+    print(f"启动 gost：{' '.join(cmd)}")
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(2)  # 等待 gost 就绪
+    if proc.poll() is not None:
+        raise RuntimeError("gost 启动失败，请检查 SOCKS5_PROXY 格式和 gost 是否已安装。")
+    print(f"✅ gost 已启动，本地 HTTP 代理端口：{LOCAL_HTTP_PORT}")
+    return proc
+
 # ── 主逻辑 ─────────────────────────────────────────────────────
 def run(playwright):
-    browser = playwright.chromium.launch(headless=True)
+    # ── 处理 SOCKS5 代理 ──
+    socks5_proxy = os.environ.get('SOCKS5_PROXY', '').strip()
+    gost_proc = None
+    proxy_config = None
+
+    if socks5_proxy:
+        try:
+            gost_proc = start_gost(socks5_proxy)
+            proxy_config = {
+                "server": f"http://127.0.0.1:{LOCAL_HTTP_PORT}",
+            }
+            print("浏览器将通过 gost HTTP 代理访问。")
+        except Exception as e:
+            print(f"⚠️  gost 启动异常：{e}，将直接连接。")
+    else:
+        print("ℹ️  未配置 SOCKS5_PROXY，直接连接。")
+
+    browser = playwright.chromium.launch(
+        headless=True,
+        proxy=proxy_config  # None 时 Playwright 忽略该参数
+    )
     context = browser.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                   "Chrome/120.0.0.0 Safari/537.36"
+                   "Chrome/120.0.0.0 Safari/537.36",
+        proxy=proxy_config
     )
 
     # ── 解析 Cookie ──
@@ -49,6 +89,8 @@ def run(playwright):
         print("❌ 未找到 ACL_COOKIES 环境变量。")
         tg_send("🔴 <b>ACLClouds 续期通知</b>\n\n❌ 登录失败：未找到 ACL_COOKIES 环境变量。")
         browser.close()
+        if gost_proc:
+            gost_proc.terminate()
         return
 
     normalized = raw_cookies.replace('\n', ';').replace('\r', '')
@@ -77,14 +119,12 @@ def run(playwright):
         context.add_cookies(cookies)
 
         # ── 访问项目页 ──
-        # 用 domcontentloaded 而非 networkidle，避免广告/统计脚本持续请求导致超时
         print("正在访问项目面板...")
         page.goto("https://dash.aclclouds.com/projects", wait_until="domcontentloaded", timeout=60000)
-        # 等待项目列表容器出现，最多 15 秒，比固定 sleep 更可靠
         try:
             page.wait_for_selector("text='My Projects'", timeout=15000)
         except:
-            pass  # 没等到也继续，后面会检查 URL 和按钮
+            pass
 
         # ── 检查是否登录成功 ──
         if "login" in page.url or "signin" in page.url:
@@ -104,7 +144,6 @@ def run(playwright):
         count = renew_buttons.count()
 
         if count == 0:
-            # 不在续期窗口内，静默跳过，不发通知
             print("ℹ️  未找到 Renew 按钮（不在续期窗口内），本次跳过。")
             return
 
@@ -123,7 +162,6 @@ def run(playwright):
             print(f"已点击第 {i+1} 个 Renew 按钮，等待结果...")
             page.wait_for_timeout(4000)
 
-            # 检查成功提示
             if page.locator("text='Server renewed successfully'").count() > 0:
                 print(f"✅ 第 {i+1} 个服务器续期成功")
                 success_count += 1
@@ -166,6 +204,9 @@ def run(playwright):
         )
     finally:
         browser.close()
+        if gost_proc:
+            gost_proc.terminate()
+            print("gost 进程已终止。")
 
 with sync_playwright() as playwright:
     run(playwright)
