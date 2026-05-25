@@ -2,6 +2,7 @@ import os
 import time
 import subprocess
 import requests
+from urllib.parse import quote, urlparse
 from playwright.sync_api import sync_playwright
 
 # ── Telegram 通知 ──────────────────────────────────────────────
@@ -36,18 +37,33 @@ def tg_send(text: str, photo_path: str = None):
         print(f"⚠️  TG 通知异常: {e}")
 
 # ── gost 代理启动 ──────────────────────────────────────────────
-# SOCKS5_PROXY 格式：user:pass@host:port 或 host:port
 LOCAL_HTTP_PORT = 18080
+
+def encode_proxy_auth(socks5_proxy: str) -> str:
+    """
+    对用户名和密码做 URL 编码，避免 * @ : / 等特殊字符干扰 gost 解析。
+    输入格式：user:pass@host:port 或 host:port
+    """
+    parsed = urlparse("socks5://" + socks5_proxy)
+    if parsed.username:
+        user = quote(parsed.username, safe='')
+        pwd  = quote(parsed.password or '', safe='')
+        host = parsed.hostname
+        port = parsed.port
+        return f"{user}:{pwd}@{host}:{port}"
+    return socks5_proxy
 
 def start_gost(socks5_proxy: str) -> subprocess.Popen:
     """
-    将认证 SOCKS5 转为本地 HTTP 代理，供 Chromium 使用。
-    gost 命令：gost -L http://:18080 -F socks5://user:pass@host:port
+    将认证 SOCKS5 转为本地 HTTP 代理供 Chromium 使用。
+    用列表传参（不走 shell），彻底避免 * 等特殊字符被展开。
     """
-    cmd = ["gost", "-L", f"http://:{LOCAL_HTTP_PORT}", "-F", f"socks5://{socks5_proxy}"]
-    print(f"启动 gost：{' '.join(cmd)}")
+    encoded = encode_proxy_auth(socks5_proxy)
+    cmd = ["gost", "-L", f"http://:{LOCAL_HTTP_PORT}", "-F", f"socks5://{encoded}"]
+    # 不打印完整命令，避免密码泄露到日志
+    print("启动 gost（认证信息已 URL 编码，不走 shell）...")
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(2)  # 等待 gost 就绪
+    time.sleep(2)
     if proc.poll() is not None:
         raise RuntimeError("gost 启动失败，请检查 SOCKS5_PROXY 格式和 gost 是否已安装。")
     print(f"✅ gost 已启动，本地 HTTP 代理端口：{LOCAL_HTTP_PORT}")
@@ -63,9 +79,7 @@ def run(playwright):
     if socks5_proxy:
         try:
             gost_proc = start_gost(socks5_proxy)
-            proxy_config = {
-                "server": f"http://127.0.0.1:{LOCAL_HTTP_PORT}",
-            }
+            proxy_config = {"server": f"http://127.0.0.1:{LOCAL_HTTP_PORT}"}
             print("浏览器将通过 gost HTTP 代理访问。")
         except Exception as e:
             print(f"⚠️  gost 启动异常：{e}，将直接连接。")
@@ -74,7 +88,7 @@ def run(playwright):
 
     browser = playwright.chromium.launch(
         headless=True,
-        proxy=proxy_config  # None 时 Playwright 忽略该参数
+        proxy=proxy_config
     )
     context = browser.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
