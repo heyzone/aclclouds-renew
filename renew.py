@@ -178,6 +178,7 @@ def run(playwright):
         def handle_action_buttons(locator, action_name: str, total: int):
             """点击续期/重激活按钮，然后进入 Manage 检查状态。"""
             for i in range(total):
+                is_last = (i == total - 1)
                 # 每次重新定位，避免 DOM 刷新后引用失效
                 btns = page.locator(f"text='{action_name}'")
                 btn = btns.nth(0)  # 每次取第一个未处理的
@@ -242,13 +243,14 @@ def run(playwright):
 
                 results.append({"action": action_name, "action_ok": action_ok, "server_status": server_status})
 
-                # ── 返回项目列表，处理下一个 ──
-                page.goto("https://dash.aclclouds.com/projects", wait_until="domcontentloaded", timeout=60000)
-                try:
-                    page.wait_for_selector("text='My Projects'", timeout=15000)
-                except Exception:
-                    pass
-                page.wait_for_timeout(2000)
+                # ── 最后一个留在 Console 页面截图；其余返回列表处理下一个 ──
+                if not is_last:
+                    page.goto("https://dash.aclclouds.com/projects", wait_until="domcontentloaded", timeout=60000)
+                    try:
+                        page.wait_for_selector("text='My Projects'", timeout=15000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(2000)
 
         # Renew 与 Reactive 互斥，只会命中其中一个分支
         if renew_count > 0:
@@ -258,9 +260,10 @@ def run(playwright):
             print(f"\n── 处理 {reactivate_count} 个 Reactive ──")
             handle_action_buttons(reactivate_btns, "Reactive", reactivate_count)
 
-        # ── Console 页面截图 ──
-        # 此时已在最后一个服务器的 Console 页面，直接截图
+        # ── Console 页面截图（此时停留在最后一个服务器的 Console 页面）──
+        page.wait_for_timeout(2000)
         page.screenshot(path="final_page.png", full_page=True)
+        print("✅ Console 页面截图已保存")
 
         # ── 判断是否需要发送 TG 通知 ──
         # 规则：登录失败 / Renew 成功或失败 / Reactive 成功或失败 / 服务器 Offline 才通知
