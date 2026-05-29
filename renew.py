@@ -266,7 +266,7 @@ def run(playwright):
         print("✅ Console 页面截图已保存")
 
         # ── 判断是否需要发送 TG 通知 ──
-        # 规则：登录失败 / Renew 成功或失败 / Reactive 成功或失败 / 服务器 Offline 才通知
+        # 规则：登录失败 / Renew 成功或失败 / Reactivate 成功或失败 / 服务器 Offline 才通知
         need_notify = False
         lines = []
 
@@ -276,7 +276,7 @@ def run(playwright):
             status   = r["server_status"]
             is_offline = status.lower() != "online"
 
-            # 有 Renew/Reactive 操作就通知
+            # 有 Renew/Reactivate 操作就通知
             need_notify = True
 
             action_icon = "✅" if ok else "❌"
