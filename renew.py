@@ -159,21 +159,21 @@ def run(playwright):
 
         print(f"✅ 登录成功：{page.url}")
 
-        # ── 查找 Renew / Reactive 按钮 ──
+        # ── 查找 Renew / Reactivate 按钮 ──
         renew_btns     = page.locator("text='Renew'")
-        reactivate_btns = page.locator("text='Reactive'")
+        reactivate_btns = page.locator("text='Reactivate'")
         renew_count     = renew_btns.count()
         reactivate_count = reactivate_btns.count()
-        print(f"Renew 按钮：{renew_count}，Reactive 按钮：{reactivate_count}")
+        print(f"Renew 按钮：{renew_count}，Reactivate 按钮：{reactivate_count}")
 
         if renew_count == 0 and reactivate_count == 0:
             # 不在操作窗口，静默跳过
-            print("ℹ️ 未检测到 Renew / Reactive 按钮，不在操作窗口，本次跳过。")
+            print("ℹ️ 未检测到 Renew / Reactivate 按钮，不在操作窗口，本次跳过。")
             return
 
-        # ── 逐服务器处理（Renew 与 Reactive 互斥，只会执行其中一个）──
+        # ── 逐服务器处理（Renew 与 Reactivate 互斥，只会执行其中一个）──
 
-        results = []  # 每条: {"action": "Renew"|"Reactive", "action_ok": bool, "server_status": str}
+        results = []  # 每条: {"action": "Renew"|"Reactivate", "action_ok": bool, "server_status": str}
 
         def handle_action_buttons(locator, action_name: str, total: int):
             """点击续期/重激活按钮，然后进入 Manage 检查状态。"""
