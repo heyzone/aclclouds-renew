@@ -252,13 +252,13 @@ def run(playwright):
                         pass
                     page.wait_for_timeout(2000)
 
-        # Renew 与 Reactive 互斥，只会命中其中一个分支
+        # Renew 与 Reactivate 互斥，只会命中其中一个分支
         if renew_count > 0:
             print(f"\n── 处理 {renew_count} 个 Renew ──")
             handle_action_buttons(renew_btns, "Renew", renew_count)
         elif reactivate_count > 0:
-            print(f"\n── 处理 {reactivate_count} 个 Reactive ──")
-            handle_action_buttons(reactivate_btns, "Reactive", reactivate_count)
+            print(f"\n── 处理 {reactivate_count} 个 Reactivate ──")
+            handle_action_buttons(reactivate_btns, "Reactivate", reactivate_count)
 
         # ── Console 页面截图（此时停留在最后一个服务器的 Console 页面）──
         page.wait_for_timeout(2000)
